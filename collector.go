@@ -42,7 +42,7 @@ func NewLightningExporter(namespace string, rpcAddr string, tlsCertPath string, 
 		timeout:      timeout,
 
 		metrics: map[string]*prometheus.Desc{
-			"lnd_up": newGlobalMetric(namespace, "lnd_up", "up", []string{}),
+			"up": newGlobalMetric(namespace, "up", "up", []string{}),
 
 			"forwarding_history_info": newGlobalMetric(namespace, "forwarding_history_info", "forwarding_history_info",
 				[]string{
@@ -145,7 +145,7 @@ func (c *LndExporter) Collect(ch chan<- prometheus.Metric) {
 	con, err := getGrpcClient(c.rpcAddr, c.tlsCertPath, c.macaroonPath)
 	if err != nil {
 		log.Printf("getGrpcClient() err: %s", err)
-		ch <- prometheus.MustNewConstMetric(c.metrics["lnd_up"], prometheus.GaugeValue, 0)
+		ch <- prometheus.MustNewConstMetric(c.metrics["up"], prometheus.GaugeValue, 0)
 		return
 	}
 	defer func() {
@@ -161,7 +161,7 @@ func (c *LndExporter) Collect(ch chan<- prometheus.Metric) {
 	stats, err := rpcClient.GetInfo(ctx, &lnrpc.GetInfoRequest{})
 	if err != nil {
 		log.Printf("rpcClient.GetInfo() err: %s", err)
-		ch <- prometheus.MustNewConstMetric(c.metrics["lnd_up"], prometheus.GaugeValue, 0.0)
+		ch <- prometheus.MustNewConstMetric(c.metrics["up"], prometheus.GaugeValue, 0.0)
 		return
 	}
 
@@ -296,5 +296,5 @@ func (c *LndExporter) Collect(ch chan<- prometheus.Metric) {
 		}
 	}
 
-	ch <- prometheus.MustNewConstMetric(c.metrics["lnd_up"], prometheus.GaugeValue, 1.0)
+	ch <- prometheus.MustNewConstMetric(c.metrics["up"], prometheus.GaugeValue, 1.0)
 }
