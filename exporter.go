@@ -74,7 +74,7 @@ func main() {
 			*namespace,
 			*rpcAddr,
 			*tlsCertPath, *macaroonPath,
-			defaultTimeout, true,
+			defaultTimeout,
 		))
 
 	if *goMetrics {

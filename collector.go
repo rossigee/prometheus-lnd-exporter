@@ -34,7 +34,7 @@ func newGlobalMetric(namespace string, metricName string, docString string, labe
 	return prometheus.NewDesc(namespace+"_"+metricName, docString, labels, nil)
 }
 
-func NewLightningExporter(namespace string, rpcAddr string, tlsCertPath string, macaroonPath string, timeout time.Duration, exportPeerMetrics bool) *LndExporter {
+func NewLightningExporter(namespace string, rpcAddr string, tlsCertPath string, macaroonPath string, timeout time.Duration) *LndExporter {
 	return &LndExporter{
 		rpcAddr:      rpcAddr,
 		tlsCertPath:  tlsCertPath,
@@ -79,7 +79,7 @@ func NewLightningExporter(namespace string, rpcAddr string, tlsCertPath string, 
 			"peer_info_sent_bytes_total":     newGlobalMetric(namespace, "peer_info_sent_bytes_total", "peer_info_sent_bytes_total", []string{"addr"}),
 		},
 
-		exportPeerMetrics:    exportPeerMetrics,
+		exportPeerMetrics:    true,
 		exportPaymentMetrics: true,
 	}
 }
