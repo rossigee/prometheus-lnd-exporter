@@ -1,3 +1,4 @@
 .idea
+.env
 lnd-exporter
 prometheus-lnd-exporter
