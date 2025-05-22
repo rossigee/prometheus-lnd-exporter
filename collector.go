@@ -62,17 +62,21 @@ func NewLightningExporter(namespace string, rpcAddr string, tlsCertPath string, 
 
 			"instance_info": newGlobalMetric(namespace, "instance_info", "instance_info", []string{"alias", "pubkey", "version"}),
 
-			"wallet_balance_satoshis":         newGlobalMetric(namespace, "wallet_balance_satoshis", "The wallet balance.", []string{"status"}),
-			"peers":                           newGlobalMetric(namespace, "peers", "Number of currently connected peers.", []string{}),
-			"channels":                        newGlobalMetric(namespace, "channels", "Number of channels", []string{"status"}),
-			"block_height":                    newGlobalMetric(namespace, "block_height", "The node’s current view of the height of the best block", []string{}),
-			"synced_to_chain":                 newGlobalMetric(namespace, "synced_to_chain", "The node’s current view of the height of the best block", []string{}),
-			"channels_limbo_balance_satoshis": newGlobalMetric(namespace, "channel_limbo_balance_satoshis", "The balance in satoshis encumbered in pending channels", []string{}),
-			"channels_pending":                newGlobalMetric(namespace, "channel_pending", "The total pending channels", []string{"status", "forced"}),
-			"channels_waiting_close":          newGlobalMetric(namespace, "channel_waiting_close", "Channels waiting for closing tx to confirm", []string{}),
-			"channels_balance_satoshis":       newGlobalMetric(namespace, "channels_balance_satoshis", "Sum of all channel funds available", []string{}),
-			"channel_balance_satoshis":        newGlobalMetric(namespace, "channel_balance_satoshis", "The channel local balance", []string{"active", "remote_pubkey", "chan_point", "chan_id", "capacity", "commit_fee", "private", "initator"}),
-			"channel_balance_percentage":      newGlobalMetric(namespace, "channel_balance_percentage", "The channel local balance", []string{"active", "remote_pubkey", "chan_point", "chan_id", "capacity", "commit_fee", "private", "initator"}),
+			"wallet_balance_satoshis":          newGlobalMetric(namespace, "wallet_balance_satoshis", "The wallet balance.", []string{"status"}),
+			"peers":                            newGlobalMetric(namespace, "peers", "Number of currently connected peers.", []string{}),
+			"channels":                         newGlobalMetric(namespace, "channels", "Number of channels", []string{"status"}),
+			"block_height":                     newGlobalMetric(namespace, "block_height", "The node’s current view of the height of the best block", []string{}),
+			"synced_to_chain":                  newGlobalMetric(namespace, "synced_to_chain", "The node’s current view of the height of the best block", []string{}),
+			"channels_limbo_balance_satoshis":  newGlobalMetric(namespace, "channels_limbo_balance_satoshis", "The balance in satoshis encumbered in pending channels", []string{}),
+			"channels_pending":                 newGlobalMetric(namespace, "channels_pending", "The total pending channels", []string{"status", "forced"}),
+			"channels_waiting_close":           newGlobalMetric(namespace, "channels_waiting_close", "Channels waiting for closing tx to confirm", []string{}),
+			"channels_local_balance_satoshis":  newGlobalMetric(namespace, "channels_local_balance_satoshis", "Sum of all channel sendable balances", []string{}),
+			"channels_remote_balance_satoshis": newGlobalMetric(namespace, "channels_remote_balance_satoshis", "Sum of all channel receivable balances", []string{}),
+			"channel_local_balance_satoshis":   newGlobalMetric(namespace, "channel_local_balance_satoshis", "The channel local balance", []string{"active", "remote_pubkey", "chan_point", "chan_id", "private", "initator"}),
+			"channel_remote_balance_satoshis":  newGlobalMetric(namespace, "channel_remote_balance_satoshis", "The channel remote balance", []string{"active", "remote_pubkey", "chan_point", "chan_id", "private", "initator"}),
+			"channel_capacity_satoshis":        newGlobalMetric(namespace, "channel_capacity_satoshis", "The channel total capacity", []string{"active", "remote_pubkey", "chan_point", "chan_id", "private", "initator"}),
+			"channel_commit_fee_satoshis":      newGlobalMetric(namespace, "channel_commit_fee_satoshis", "The channel commit fee", []string{"active", "remote_pubkey", "chan_point", "chan_id", "private", "initator"}),
+			"channel_balance_percentage":       newGlobalMetric(namespace, "channel_balance_percentage", "The channel local balance", []string{"active", "remote_pubkey", "chan_point", "chan_id", "private", "initator"}),
 
 			"peer_info":                      newGlobalMetric(namespace, "peer_info", "peer_info", []string{"addr", "remote_pubkey", "direction"}),
 			"peer_info_received_bytes_total": newGlobalMetric(namespace, "peer_info_received_bytes_total", "peer_info_received_bytes_total", []string{"addr"}),
@@ -190,7 +194,7 @@ func (c *LndExporter) Collect(ch chan<- prometheus.Metric) {
 		ch <- prometheus.MustNewConstMetric(c.metrics["wallet_balance_satoshis"],
 			prometheus.GaugeValue, float64(walletStats.ConfirmedBalance), "confirmed")
 	} else {
-		log.Printf("rpcClient.GetWalletStats err: %s", err)
+		log.Printf("rpcClient.WalletBalance err: %s", err)
 	}
 
 	if pendingChannelsStats, err := rpcClient.PendingChannels(ctx, &lnrpc.PendingChannelsRequest{}); err == nil {
@@ -199,20 +203,20 @@ func (c *LndExporter) Collect(ch chan<- prometheus.Metric) {
 		ch <- prometheus.MustNewConstMetric(c.metrics["channels_pending"],
 			prometheus.GaugeValue, float64(len(pendingChannelsStats.PendingOpenChannels)), "opening", "false")
 		ch <- prometheus.MustNewConstMetric(c.metrics["channels_pending"],
-			prometheus.GaugeValue, float64(len(pendingChannelsStats.PendingClosingChannels)), "closing", "false")
-		ch <- prometheus.MustNewConstMetric(c.metrics["channels_pending"],
 			prometheus.GaugeValue, float64(len(pendingChannelsStats.PendingForceClosingChannels)), "closing", "true")
 		ch <- prometheus.MustNewConstMetric(c.metrics["channels_waiting_close"],
 			prometheus.GaugeValue, float64(len(pendingChannelsStats.WaitingCloseChannels)))
 	} else {
-		log.Printf("rpcClient.GetPendingChannelsStats err: %s", err)
+		log.Printf("rpcClient.PendingChannels err: %s", err)
 	}
 
 	if channelsBalanceStats, err := rpcClient.ChannelBalance(ctx, &lnrpc.ChannelBalanceRequest{}); err == nil {
-		ch <- prometheus.MustNewConstMetric(c.metrics["channels_balance_satoshis"],
-			prometheus.GaugeValue, float64(channelsBalanceStats.Balance))
+		ch <- prometheus.MustNewConstMetric(c.metrics["channels_local_balance_satoshis"],
+			prometheus.GaugeValue, float64(channelsBalanceStats.LocalBalance.GetSat()))
+		ch <- prometheus.MustNewConstMetric(c.metrics["channels_remote_balance_satoshis"],
+			prometheus.GaugeValue, float64(channelsBalanceStats.RemoteBalance.GetSat()))
 	} else {
-		log.Printf("rpcClient.GetChannelsBalanceStats err: %s", err)
+		log.Printf("rpcClient.ChannelBalance err: %s", err)
 	}
 
 	// todo: fix this
@@ -234,7 +238,7 @@ func (c *LndExporter) Collect(ch chan<- prometheus.Metric) {
 				)
 			}
 		} else {
-			log.Printf("rpcClient.GetChannelsBalanceStats err: %s", err)
+			log.Printf("rpcClient.ForwardingHistory err: %s", err)
 		}
 	}
 
@@ -254,8 +258,6 @@ func (c *LndExporter) Collect(ch chan<- prometheus.Metric) {
 				channel.RemotePubkey,
 				channel.ChannelPoint,
 				strconv.FormatUint(channel.ChanId, 10),
-				strconv.FormatInt(channel.Capacity, 10),
-				strconv.FormatInt(channel.CommitFee, 10),
 				strconv.FormatBool(channel.Private),
 				strconv.FormatBool(channel.Initiator),
 			}
@@ -263,8 +265,14 @@ func (c *LndExporter) Collect(ch chan<- prometheus.Metric) {
 			realCapacity := float64(channel.Capacity) - float64(channel.CommitFee)
 			balancePercentage := float64(channel.LocalBalance) / realCapacity
 
-			ch <- prometheus.MustNewConstMetric(c.metrics["channel_balance_satoshis"],
+			ch <- prometheus.MustNewConstMetric(c.metrics["channel_local_balance_satoshis"],
 				prometheus.GaugeValue, float64(channel.LocalBalance), lbls...)
+			ch <- prometheus.MustNewConstMetric(c.metrics["channel_remote_balance_satoshis"],
+				prometheus.GaugeValue, float64(channel.RemoteBalance), lbls...)
+			ch <- prometheus.MustNewConstMetric(c.metrics["channel_capacity_satoshis"],
+				prometheus.GaugeValue, float64(channel.Capacity), lbls...)
+			ch <- prometheus.MustNewConstMetric(c.metrics["channel_commit_fee_satoshis"],
+				prometheus.GaugeValue, float64(channel.CommitFee), lbls...)
 			ch <- prometheus.MustNewConstMetric(c.metrics["channel_balance_percentage"],
 				prometheus.GaugeValue, float64(balancePercentage), lbls...)
 		}
