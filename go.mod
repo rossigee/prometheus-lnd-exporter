@@ -1,8 +1,6 @@
-module github.com/lnliz/prometheus-lnd-exporter
+module github.com/rossigee/prometheus-lnd-exporter
 
-go 1.23.6
-
-toolchain go1.24.2
+go 1.24
 
 replace google.golang.org/protobuf => github.com/lightninglabs/protobuf-go-hex-display v1.30.0-hex-display
 
