@@ -11,6 +11,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.uber.org/zap"
 	"google.golang.org/grpc"
 )
 
@@ -63,8 +64,14 @@ func main() {
 			"Enable process and go metrics from go client library. The default value can be overwritten by GO_METRICS environmental variable.")
 	)
 
+	// Set up observability
+	initLogger()
+	initTracer()
+
 	flag.Parse()
-	log.Printf("Lightning Prometheus Exporter Version=%v GitCommit=%v", version, gitCommit)
+	logger.Info("Lightning Prometheus Exporter",
+		zap.String("version", version),
+		zap.String("gitCommit", gitCommit))
 
 	defaultTimeout := 15 * time.Second
 
@@ -92,9 +99,6 @@ func main() {
 			</body>
 			</html>`))
 	})
-
-	// Set up observability
-	initTracer()
 
 	log.Printf("ListenAndServe %s \n", *listenAddr)
 	log.Fatal(http.ListenAndServe(*listenAddr, nil))

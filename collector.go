@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"log"
 	"os"
 	"strconv"
 	"sync"
@@ -12,6 +11,7 @@ import (
 	"github.com/lightningnetwork/lnd/macaroons"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel/codes"
+	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"gopkg.in/macaroon.v2"
@@ -106,19 +106,19 @@ func boolToFloat(b bool) float64 {
 func getGrpcClient(rpcAddr string, tlsCertPath string, macaroonPath string) (*grpc.ClientConn, error) {
 	tlsCreds, err := credentials.NewClientTLSFromFile(tlsCertPath, "")
 	if err != nil {
-		log.Println("Cannot get node tls credentials", err)
+		logger.Error("Cannot get node tls credentials", zap.Error(err))
 		return nil, err
 	}
 
 	macaroonBytes, err := os.ReadFile(macaroonPath)
 	if err != nil {
-		log.Println("Cannot read macaroon file", err)
+		logger.Error("Cannot read macaroon file", zap.Error(err))
 		return nil, err
 	}
 
 	mac := &macaroon.Macaroon{}
 	if err = mac.UnmarshalBinary(macaroonBytes); err != nil {
-		log.Println("Cannot unmarshal macaroon", err)
+		logger.Error("Cannot unmarshal macaroon", zap.Error(err))
 		return nil, err
 	}
 
@@ -133,10 +133,10 @@ func getGrpcClient(rpcAddr string, tlsCertPath string, macaroonPath string) (*gr
 		grpc.WithDefaultCallOptions(maxMsgRecvSize),
 	}
 
-	log.Printf("dialing rpcAddr: %s", rpcAddr)
+	logger.Debug("dialing rpcAddr", zap.String("rpcAddr", rpcAddr))
 	conn, err := grpc.Dial(rpcAddr, opts...)
 	if err != nil {
-		log.Printf("grpc.Dial() err: %s", err)
+		logger.Error("grpc.Dial() err", zap.Error(err))
 		return nil, err
 	}
 
@@ -152,12 +152,12 @@ func (c *LndExporter) Collect(ch chan<- prometheus.Metric) {
 
 	con, err := getGrpcClient(c.rpcAddr, c.tlsCertPath, c.macaroonPath)
 	if err != nil {
-		log.Printf("getGrpcClient() err: %s", err)
+		logger.Error("getGrpcClient() err", zap.Error(err))
 		ch <- prometheus.MustNewConstMetric(c.metrics["up"], prometheus.GaugeValue, 0)
 		return
 	}
 	defer func() {
-		log.Println("closing connection")
+		logger.Debug("closing connection")
 		con.Close()
 	}()
 
@@ -170,7 +170,7 @@ func (c *LndExporter) Collect(ch chan<- prometheus.Metric) {
 	defer getInfoSpan.End()
 	stats, err := rpcClient.GetInfo(ctx, &lnrpc.GetInfoRequest{})
 	if err != nil {
-		log.Printf("rpcClient.GetInfo() err: %s", err)
+		logger.Error("rpcClient.GetInfo() err", zap.Error(err))
 		getInfoSpan.RecordError(err)
 		getInfoSpan.SetStatus(codes.Error, "Failed to fetch get info")
 		ch <- prometheus.MustNewConstMetric(c.metrics["up"], prometheus.GaugeValue, 0.0)
@@ -207,7 +207,7 @@ func (c *LndExporter) Collect(ch chan<- prometheus.Metric) {
 	} else {
 		walletBalanceSpan.RecordError(err)
 		walletBalanceSpan.SetStatus(codes.Error, "Failed to fetch wallet balance")
-		log.Printf("rpcClient.WalletBalance err: %s", err)
+		logger.Error("rpcClient.WalletBalance err", zap.Error(err))
 	}
 	walletBalanceSpan.End()
 
@@ -225,7 +225,7 @@ func (c *LndExporter) Collect(ch chan<- prometheus.Metric) {
 	} else {
 		pendingChannelsSpan.RecordError(err)
 		pendingChannelsSpan.SetStatus(codes.Error, "Failed to fetch wallet balance")
-		log.Printf("rpcClient.PendingChannels err: %s", err)
+		logger.Error("rpcClient.PendingChannels err", zap.Error(err))
 	}
 	pendingChannelsSpan.End()
 
@@ -239,7 +239,7 @@ func (c *LndExporter) Collect(ch chan<- prometheus.Metric) {
 	} else {
 		channelBalanceSpan.RecordError(err)
 		channelBalanceSpan.SetStatus(codes.Error, "Failed to fetch wallet balance")
-		log.Printf("rpcClient.ChannelBalance err: %s", err)
+		logger.Error("rpcClient.ChannelBalance err", zap.Error(err))
 	}
 	channelBalanceSpan.End()
 
@@ -266,7 +266,7 @@ func (c *LndExporter) Collect(ch chan<- prometheus.Metric) {
 		} else {
 			paymentMetricsSpan.RecordError(err)
 			paymentMetricsSpan.SetStatus(codes.Error, "Failed to fetch payment metrics")
-			log.Printf("rpcClient.ForwardingHistory err: %s", err)
+			logger.Error("rpcClient.ForwardingHistory err", zap.Error(err))
 		}
 		paymentMetricsSpan.End()
 	}
@@ -283,7 +283,7 @@ func (c *LndExporter) Collect(ch chan<- prometheus.Metric) {
 	} else {
 		networkInfoSpan.RecordError(err)
 		networkInfoSpan.SetStatus(codes.Error, "Failed to fetch network info")
-		log.Printf("rpcClient.NetworkInfoRequest err: %s", err)
+		logger.Error("rpcClient.NetworkInfoRequest err", zap.Error(err))
 	}
 	networkInfoSpan.End()
 
@@ -317,7 +317,7 @@ func (c *LndExporter) Collect(ch chan<- prometheus.Metric) {
 	} else {
 		channelBalancesSpan.RecordError(err)
 		channelBalancesSpan.SetStatus(codes.Error, "Failed to fetch balance stats")
-		log.Printf("rpcClient.ListChannels err: %s", err)
+		logger.Error("rpcClient.ListChannels err", zap.Error(err))
 	}
 	channelBalancesSpan.End()
 
@@ -325,7 +325,7 @@ func (c *LndExporter) Collect(ch chan<- prometheus.Metric) {
 	defer listPeersSpan.End()
 	if c.exportPeerMetrics {
 		peers, err := rpcClient.ListPeers(ctx, &lnrpc.ListPeersRequest{})
-		if err != nil {
+		if err == nil {
 			for _, peer := range peers.GetPeers() {
 				dir := "outbound"
 				if peer.Inbound {
@@ -345,7 +345,7 @@ func (c *LndExporter) Collect(ch chan<- prometheus.Metric) {
 		} else {
 			listPeersSpan.RecordError(err)
 			listPeersSpan.SetStatus(codes.Error, "Failed to list peers")
-			log.Printf("rpcClient.ListPeers err: %s", err)
+			logger.Error("rpcClient.ListPeers err", zap.Error(err))
 		}
 	}
 	listPeersSpan.End()
