@@ -104,11 +104,11 @@ func initTracer() {
 		trace.WithBatcher(exp),
 		trace.WithResource(resource.NewWithAttributes(
 			semconv.SchemaURL,
-			semconv.ServiceNameKey.String("lnd-unlocker"),
+			semconv.ServiceNameKey.String("lnd-exporter"),
 		)),
 		trace.WithSampler(trace.AlwaysSample()),
 	)
 	otel.SetTracerProvider(traceprovider)
 
-	tracer = traceprovider.Tracer("lnd-unlocker")
+	tracer = traceprovider.Tracer("lnd-exporter")
 }
