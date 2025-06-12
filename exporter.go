@@ -93,6 +93,9 @@ func main() {
 			</html>`))
 	})
 
+	// Set up observability
+	initTracer()
+
 	log.Printf("ListenAndServe %s \n", *listenAddr)
 	log.Fatal(http.ListenAndServe(*listenAddr, nil))
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/macaroons"
 	"github.com/prometheus/client_golang/prometheus"
+	"go.opentelemetry.io/otel/codes"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"gopkg.in/macaroon.v2"
@@ -146,6 +147,9 @@ func (c *LndExporter) Collect(ch chan<- prometheus.Metric) {
 	c.Lock()
 	defer c.Unlock()
 
+	tctx, span := tracer.Start(context.Background(), "Collect")
+	defer span.End()
+
 	con, err := getGrpcClient(c.rpcAddr, c.tlsCertPath, c.macaroonPath)
 	if err != nil {
 		log.Printf("getGrpcClient() err: %s", err)
@@ -162,12 +166,17 @@ func (c *LndExporter) Collect(ch chan<- prometheus.Metric) {
 
 	rpcClient := lnrpc.NewLightningClient(con)
 
+	_, getInfoSpan := tracer.Start(tctx, "rpcClient.GetInfo")
+	defer getInfoSpan.End()
 	stats, err := rpcClient.GetInfo(ctx, &lnrpc.GetInfoRequest{})
 	if err != nil {
 		log.Printf("rpcClient.GetInfo() err: %s", err)
+		getInfoSpan.RecordError(err)
+		getInfoSpan.SetStatus(codes.Error, "Failed to fetch get info")
 		ch <- prometheus.MustNewConstMetric(c.metrics["up"], prometheus.GaugeValue, 0.0)
 		return
 	}
+	getInfoSpan.End()
 
 	ch <- prometheus.MustNewConstMetric(c.metrics["instance_info"],
 		prometheus.GaugeValue, 1.0,
@@ -188,15 +197,22 @@ func (c *LndExporter) Collect(ch chan<- prometheus.Metric) {
 	ch <- prometheus.MustNewConstMetric(c.metrics["synced_to_chain"],
 		prometheus.GaugeValue, boolToFloat(stats.SyncedToChain))
 
+	_, walletBalanceSpan := tracer.Start(tctx, "rpcClient.WalletBalanceRequest")
+	defer walletBalanceSpan.End()
 	if walletStats, err := rpcClient.WalletBalance(ctx, &lnrpc.WalletBalanceRequest{}); err == nil {
 		ch <- prometheus.MustNewConstMetric(c.metrics["wallet_balance_satoshis"],
 			prometheus.GaugeValue, float64(walletStats.UnconfirmedBalance), "unconfirmed")
 		ch <- prometheus.MustNewConstMetric(c.metrics["wallet_balance_satoshis"],
 			prometheus.GaugeValue, float64(walletStats.ConfirmedBalance), "confirmed")
 	} else {
+		walletBalanceSpan.RecordError(err)
+		walletBalanceSpan.SetStatus(codes.Error, "Failed to fetch wallet balance")
 		log.Printf("rpcClient.WalletBalance err: %s", err)
 	}
+	walletBalanceSpan.End()
 
+	_, pendingChannelsSpan := tracer.Start(tctx, "rpcClient.PendingChannels")
+	defer pendingChannelsSpan.End()
 	if pendingChannelsStats, err := rpcClient.PendingChannels(ctx, &lnrpc.PendingChannelsRequest{}); err == nil {
 		ch <- prometheus.MustNewConstMetric(c.metrics["channels_limbo_balance_satoshis"],
 			prometheus.GaugeValue, float64(pendingChannelsStats.TotalLimboBalance))
@@ -207,21 +223,31 @@ func (c *LndExporter) Collect(ch chan<- prometheus.Metric) {
 		ch <- prometheus.MustNewConstMetric(c.metrics["channels_waiting_close"],
 			prometheus.GaugeValue, float64(len(pendingChannelsStats.WaitingCloseChannels)))
 	} else {
+		pendingChannelsSpan.RecordError(err)
+		pendingChannelsSpan.SetStatus(codes.Error, "Failed to fetch wallet balance")
 		log.Printf("rpcClient.PendingChannels err: %s", err)
 	}
+	pendingChannelsSpan.End()
 
+	_, channelBalanceSpan := tracer.Start(tctx, "rpcClient.ChannelBalance")
+	defer channelBalanceSpan.End()
 	if channelsBalanceStats, err := rpcClient.ChannelBalance(ctx, &lnrpc.ChannelBalanceRequest{}); err == nil {
 		ch <- prometheus.MustNewConstMetric(c.metrics["channels_local_balance_satoshis"],
 			prometheus.GaugeValue, float64(channelsBalanceStats.LocalBalance.GetSat()))
 		ch <- prometheus.MustNewConstMetric(c.metrics["channels_remote_balance_satoshis"],
 			prometheus.GaugeValue, float64(channelsBalanceStats.RemoteBalance.GetSat()))
 	} else {
+		channelBalanceSpan.RecordError(err)
+		channelBalanceSpan.SetStatus(codes.Error, "Failed to fetch wallet balance")
 		log.Printf("rpcClient.ChannelBalance err: %s", err)
 	}
+	channelBalanceSpan.End()
 
 	// todo: fix this
 	//
 	if c.exportPaymentMetrics {
+		_, paymentMetricsSpan := tracer.Start(tctx, "rpcClient.ForwardingHistory")
+		defer paymentMetricsSpan.End()
 		fwdReq := &lnrpc.ForwardingHistoryRequest{}
 		if fwdHistoryStats, err := rpcClient.ForwardingHistory(ctx, fwdReq); err == nil {
 			for _, f := range fwdHistoryStats.GetForwardingEvents() {
@@ -238,10 +264,15 @@ func (c *LndExporter) Collect(ch chan<- prometheus.Metric) {
 				)
 			}
 		} else {
+			paymentMetricsSpan.RecordError(err)
+			paymentMetricsSpan.SetStatus(codes.Error, "Failed to fetch payment metrics")
 			log.Printf("rpcClient.ForwardingHistory err: %s", err)
 		}
+		paymentMetricsSpan.End()
 	}
 
+	_, networkInfoSpan := tracer.Start(tctx, "rpcClient.GetNetworkInfo")
+	defer networkInfoSpan.End()
 	if networkInfo, err := rpcClient.GetNetworkInfo(ctx, &lnrpc.NetworkInfoRequest{}); err == nil {
 		ch <- prometheus.MustNewConstMetric(c.metrics["network_capacity_satoshis_total"],
 			prometheus.GaugeValue, float64(networkInfo.TotalNetworkCapacity))
@@ -249,8 +280,15 @@ func (c *LndExporter) Collect(ch chan<- prometheus.Metric) {
 			prometheus.GaugeValue, float64(networkInfo.NumChannels))
 		ch <- prometheus.MustNewConstMetric(c.metrics["network_nodes_total"],
 			prometheus.GaugeValue, float64(networkInfo.NumNodes))
+	} else {
+		networkInfoSpan.RecordError(err)
+		networkInfoSpan.SetStatus(codes.Error, "Failed to fetch network info")
+		log.Printf("rpcClient.NetworkInfoRequest err: %s", err)
 	}
+	networkInfoSpan.End()
 
+	_, channelBalancesSpan := tracer.Start(tctx, "rpcClient.ListChannelsRequest")
+	defer channelBalancesSpan.End()
 	if channelBalanceStats, err := rpcClient.ListChannels(ctx, &lnrpc.ListChannelsRequest{}); err == nil {
 		for _, channel := range channelBalanceStats.Channels {
 			lbls := []string{
@@ -277,9 +315,14 @@ func (c *LndExporter) Collect(ch chan<- prometheus.Metric) {
 				prometheus.GaugeValue, float64(balancePercentage), lbls...)
 		}
 	} else {
-		log.Printf("rpcClient.GetChannelBalanceStats err: %s", err)
+		channelBalancesSpan.RecordError(err)
+		channelBalancesSpan.SetStatus(codes.Error, "Failed to fetch balance stats")
+		log.Printf("rpcClient.ListChannels err: %s", err)
 	}
+	channelBalancesSpan.End()
 
+	_, listPeersSpan := tracer.Start(tctx, "rpcClient.ListPeersRequest")
+	defer listPeersSpan.End()
 	if c.exportPeerMetrics {
 		peers, err := rpcClient.ListPeers(ctx, &lnrpc.ListPeersRequest{})
 		if err != nil {
@@ -300,9 +343,12 @@ func (c *LndExporter) Collect(ch chan<- prometheus.Metric) {
 					prometheus.CounterValue, float64(peer.BytesSent), peer.Address)
 			}
 		} else {
+			listPeersSpan.RecordError(err)
+			listPeersSpan.SetStatus(codes.Error, "Failed to list peers")
 			log.Printf("rpcClient.ListPeers err: %s", err)
 		}
 	}
+	listPeersSpan.End()
 
 	ch <- prometheus.MustNewConstMetric(c.metrics["up"], prometheus.GaugeValue, 1.0)
 }
