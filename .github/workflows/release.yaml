@@ -21,10 +21,10 @@ jobs:
         password: ${{ secrets.DOCKER_PASSWORD }}
       
     - name: Build Docker Image
-      run: docker build -t lnliz/prometheus-lnd-exporter:${{ github.ref_name }} -t lnliz/prometheus-lnd-exporter:latest .
+      run: docker build -t rossigee/prometheus-lnd-exporter:${{ github.ref_name }} -t rossigee/prometheus-lnd-exporter:latest .
       
     - name: Push Docker Image
       run: |
-        docker push lnliz/prometheus-lnd-exporter:${{ github.ref_name }}
-        docker push lnliz/prometheus-lnd-exporter:latest
+        docker push rossigee/prometheus-lnd-exporter:${{ github.ref_name }}
+        docker push rossigee/prometheus-lnd-exporter:latest
 
