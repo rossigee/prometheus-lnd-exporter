@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"errors"
+	"os"
+	"strings"
 	"time"
 
 	"go.opentelemetry.io/otel"
@@ -77,7 +79,27 @@ func newTracerProvider() (*trace.TracerProvider, error) {
 	return tracerProvider, nil
 }
 
+func hasOTLPEnvVars() bool {
+	// Check for any OTLP-related environment variables
+	for _, env := range os.Environ() {
+		if strings.HasPrefix(env, "OTEL_") || strings.HasPrefix(env, "OTLP_") {
+			return true
+		}
+	}
+	return false
+}
+
 func initTracer() {
+	// Check if any OTLP environment variables are set
+	if !hasOTLPEnvVars() {
+		// No OTLP configuration, set up a no-op tracer provider
+		otel.SetTracerProvider(trace.NewTracerProvider())
+		tracer = otel.Tracer(name)
+		logger, _ := zap.NewProduction()
+		logger.Info("OTLP tracing disabled - no OTEL_* or OTLP_* environment variables found")
+		return
+	}
+
 	ctx := context.Background()
 
 	// Set up OpenTelemetry.
@@ -111,4 +133,6 @@ func initTracer() {
 	otel.SetTracerProvider(traceprovider)
 
 	tracer = traceprovider.Tracer("lnd-exporter")
+	logger, _ := zap.NewProduction()
+	logger.Info("OTLP tracing enabled")
 }
